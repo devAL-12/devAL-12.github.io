@@ -259,17 +259,19 @@ pre { padding: 24px 20px; overflow-x: auto; font-family: 'JetBrains Mono', monos
     <div class="mode-card" id="card-blink" onclick="selectMode('blink')">
       <div class="mode-icon">👁</div>
       <div class="mode-name">Blink Only</div>
-      <div class="mode-desc">Single EEG channel. Count-based commands — 6 blinks ON, 2 forward, 4 left, 5 right, 3 backward, 6 stop, 8 OFF. No EMG needed.</div>
+      <div class="mode-desc">Blink-count based wheelchair control. No EMG required.</div>
     </div>
     <div class="mode-card" id="card-emg" onclick="selectMode('emg')">
       <div class="mode-icon">💪</div>
       <div class="mode-name">EMG + Blink</div>
-      <div class="mode-desc">Left/right forearm EMG for turning. Blink 2× forward, 6× stop. Best for patients with upper limb muscle control.</div>
+      <div class="mode-desc">Forearm EMG + EOG Blink
+Muscle signals control direction while blink commands manage motion states.</div>
     </div>
     <div class="mode-card" id="card-cheek" onclick="selectMode('cheek')">
       <div class="mode-icon">😊</div>
       <div class="mode-name">Cheek + Blink</div>
-      <div class="mode-desc">Left/right cheek EMG for turning. Blink for forward, backward, stop. Ideal for limited limb function patients.</div>
+      <div class="mode-desc">Facial EMG + EOG Blink
+Designed for users with limited limb mobility using facial muscle activation</div>
     </div>
     <div class="mode-card" data-id="ssvep" onclick="selectMode('ssvep')" id="card-ssvep">
       <div style="position:absolute;top:10px;right:12px;background:#1a3d8a;color:#fff;font-size:0.52rem;padding:3px 8px;letter-spacing:0.12em;border-radius:2px;">BROWSER FFT</div>
