@@ -1134,118 +1134,218 @@ emg: `#include <Arduino.h>
 //   EMG Left A1 = LEFT | EMG Right A2 = RIGHT
 // ============================================
 
-#define BLINK_PIN      A0
-#define EMG_LEFT_PIN   A1
-#define EMG_RIGHT_PIN  A2
-
-#define BLINK_THRESH   600
-#define EMG_THRESH     550
-#define REFRACTORY     200
-#define DECISION_MS    1200
-#define EMG_HOLD_MS    300
-
-#define RED_LED   12
-#define GREEN_LED 13
 #define ENA 5
 #define IN1 7
 #define IN2 4
+
 #define ENB 6
 #define IN3 10
 #define IN4 11
+
+#define RED_LED 12
+#define GREEN_LED 13
+
+#define SENSOR A0
+
+// Ultrasonic
 #define TRIG_PIN 8
 #define ECHO_PIN 9
-#define OBSTACLE_CM 20
 
-uint16_t blinkCount = 0;
-bool blinkState = false;
-unsigned long lastBlinkTime = 0, lastBlinkDetectedTime = 0;
-bool systemStarted = false, motorRunning = false;
+// ===== VARIABLES =====
+int blinkCount = 0;
+bool systemOn = false;
+bool motorStopped = false;
 
-void stopAll() {
-  digitalWrite(IN1,LOW); digitalWrite(IN2,LOW);
-  digitalWrite(IN3,LOW); digitalWrite(IN4,LOW);
-  motorRunning = false; Serial.println(">> STOP");
+unsigned long lastBlinkTime = 0;
+const int blinkThreshold = 600;
+const int debounceDelay = 300;
+const int commandDelay = 1200;
+
+int speedVal = 120;
+
+// distance
+long duration;
+int distance;
+
+// forward distance control
+const int forwardTime = 1200;   // 🔁 adjust this for exact 50 cm
+
+// ===== MOTOR FUNCTIONS =====
+void stopMotors() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
 }
+
 void moveForward() {
-  analogWrite(ENA,150); analogWrite(ENB,150);
-  digitalWrite(IN1,HIGH); digitalWrite(IN2,LOW);
-  digitalWrite(IN3,HIGH); digitalWrite(IN4,LOW);
-  motorRunning = true; Serial.println(">> FORWARD");
-}
-void turnLeft() {
-  analogWrite(ENA,120); analogWrite(ENB,120);
-  digitalWrite(IN1,LOW); digitalWrite(IN2,HIGH);
-  digitalWrite(IN3,HIGH); digitalWrite(IN4,LOW);
-  Serial.println(">> LEFT");
-}
-void turnRight() {
-  analogWrite(ENA,120); analogWrite(ENB,120);
-  digitalWrite(IN1,HIGH); digitalWrite(IN2,LOW);
-  digitalWrite(IN3,LOW); digitalWrite(IN4,HIGH);
-  Serial.println(">> RIGHT");
-}
-long getDistance() {
-  digitalWrite(TRIG_PIN,LOW); delayMicroseconds(2);
-  digitalWrite(TRIG_PIN,HIGH); delayMicroseconds(10);
-  digitalWrite(TRIG_PIN,LOW);
-  return pulseIn(ECHO_PIN,HIGH,30000)/58;
+  analogWrite(ENA, speedVal);
+  analogWrite(ENB, speedVal);
+
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 }
 
-void setup() {
-  Serial.begin(115200);
-  pinMode(RED_LED,OUTPUT); pinMode(GREEN_LED,OUTPUT);
-  pinMode(ENA,OUTPUT); pinMode(IN1,OUTPUT); pinMode(IN2,OUTPUT);
-  pinMode(ENB,OUTPUT); pinMode(IN3,OUTPUT); pinMode(IN4,OUTPUT);
-  pinMode(TRIG_PIN,OUTPUT); pinMode(ECHO_PIN,INPUT);
-  digitalWrite(RED_LED,HIGH); digitalWrite(GREEN_LED,LOW);
-  stopAll();
-  Serial.println("READY — Blink 6x to START");
+void turnRight25() {
+  analogWrite(ENA, speedVal);
+  analogWrite(ENB, speedVal);
+
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  delay(300);
+  stopMotors();
 }
 
-void loop() {
-  if (motorRunning && getDistance() < OBSTACLE_CM) {
-    stopAll(); Serial.println("!! OBSTACLE");
+void turnLeft25() {
+  analogWrite(ENA, speedVal);
+  analogWrite(ENB, speedVal);
+
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+
+  delay(300);
+  stopMotors();
+}
+
+// ===== ULTRASONIC =====
+int getDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  duration = pulseIn(ECHO_PIN, HIGH);
+  return duration * 0.034 / 2;
+}
+
+// ===== FORWARD 50 cm WITH OBSTACLE CHECK =====
+void forward50cmSafe() {
+
+  unsigned long startTime = millis();
+
+  moveForward();
+
+  while (millis() - startTime < forwardTime) {
+
+    int d = getDistance();
+
+    if (d > 0 && d < 20) {
+      stopMotors();
+      motorStopped = true;
+      Serial.println("⚠️ OBSTACLE DETECTED - STOPPED");
+      return;
+    }
   }
 
-  // Blink detection
-  int bval = analogRead(BLINK_PIN);
-  if (bval > BLINK_THRESH) {
-    if (!blinkState && (millis()-lastBlinkTime > REFRACTORY)) {
-      blinkCount++; blinkState = true;
-      lastBlinkTime = millis(); lastBlinkDetectedTime = millis();
-      Serial.print("Blink #"); Serial.println(blinkCount);
-    }
-  } else { blinkState = false; }
+  stopMotors();
+  motorStopped = true;
+  Serial.println("Moved Forward 50 cm");
+}
 
-  // Blink decisions
-  if (blinkCount > 0 && (millis()-lastBlinkDetectedTime > DECISION_MS)) {
-    if (!systemStarted && blinkCount == 6) {
-      systemStarted = true;
-      digitalWrite(RED_LED,LOW); digitalWrite(GREEN_LED,HIGH);
-      Serial.println("==> SYSTEM ON");
-    } else if (systemStarted) {
-      if      (blinkCount == 2) moveForward();
-      else if (blinkCount == 6) stopAll();
-      else if (blinkCount == 8) {
-        stopAll(); systemStarted = false;
-        digitalWrite(RED_LED,HIGH); digitalWrite(GREEN_LED,LOW);
-        Serial.println("==> SYSTEM OFF");
+// ===== SETUP =====
+void setup() {
+
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  pinMode(RED_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  Serial.begin(115200);
+
+  digitalWrite(RED_LED, HIGH);
+  digitalWrite(GREEN_LED, LOW);
+
+  stopMotors();
+}
+
+// ===== LOOP =====
+void loop() {
+
+  int sensorValue = analogRead(SENSOR);
+
+  // BLINK DETECT
+  if (sensorValue > blinkThreshold && millis() - lastBlinkTime > debounceDelay) {
+    blinkCount++;
+    lastBlinkTime = millis();
+
+    Serial.print("Blink Count = ");
+    Serial.println(blinkCount);
+  }
+
+  // COMMAND EXECUTE
+  if (blinkCount > 0 && millis() - lastBlinkTime > commandDelay) {
+
+    // SYSTEM ON
+    if (!systemOn && blinkCount == 6) {
+      systemOn = true;
+      motorStopped = false;
+
+      digitalWrite(RED_LED, LOW);
+      digitalWrite(GREEN_LED, HIGH);
+
+      Serial.println("SYSTEM STARTED");
+    }
+
+    else if (systemOn) {
+
+      // 2 blinks stop
+      if (blinkCount == 2) {
+        stopMotors();
+        motorStopped = true;
+        Serial.println("STOP");
+      }
+
+      // 3 blinks forward 50cm
+      else if (blinkCount == 3) {
+        forward50cmSafe();
+      }
+
+      // 4 blinks left
+      else if (blinkCount == 4) {
+        turnLeft25();
+        motorStopped = true;
+      }
+
+      // 5 blinks right
+      else if (blinkCount == 5) {
+        turnRight25();
+        motorStopped = true;
+      }
+
+      // 6 blinks system OFF (only if stopped)
+      else if (blinkCount == 6 && motorStopped) {
+        systemOn = false;
+
+        digitalWrite(GREEN_LED, LOW);
+        digitalWrite(RED_LED, HIGH);
+
+        Serial.println("SYSTEM OFF");
       }
     }
+
     blinkCount = 0;
   }
-
-  // EMG turning (only when system ON)
-  if (systemStarted) {
-    int lval = analogRead(EMG_LEFT_PIN);
-    int rval = analogRead(EMG_RIGHT_PIN);
-    if (lval > EMG_THRESH && rval <= EMG_THRESH) {
-      turnLeft(); delay(EMG_HOLD_MS); stopAll();
-    } else if (rval > EMG_THRESH && lval <= EMG_THRESH) {
-      turnRight(); delay(EMG_HOLD_MS); stopAll();
-    }
-  }
-  delay(5);
 }`,
 
 cheek: `#include <Arduino.h>
